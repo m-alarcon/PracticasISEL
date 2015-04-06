@@ -18,7 +18,7 @@
 #define GPIO_DEVOLVER   8
 
 #define CUP_TIME	250
-#define COFFEE_TIME	3000
+#define COFFEE_TIME     3000
 #define MILK_TIME	3000
 
 #define PRECIO		50
@@ -123,9 +123,9 @@ static int devolver_cambio (fsm_t* this)
     dinero = 0;
     bot_devolver = 0;
     return 1; //Falta comprobar
-  } else { 
+  } else {
     DEBUG({printf ("La variable bot_devolver es: %i\n", bot_devolver);})
-    return 0; 
+    return 0;
   }
 }
 
@@ -226,7 +226,7 @@ void
 timeval_add (struct timeval *res, struct timeval *a, struct timeval *b)
 {
   res->tv_sec = a->tv_sec + b->tv_sec
-    + a->tv_usec / 1000000 + b->tv_usec / 1000000; 
+    + a->tv_usec / 1000000 + b->tv_usec / 1000000;
   res->tv_usec = a->tv_usec % 1000000 + b->tv_usec % 1000000;
 }
 
@@ -243,8 +243,12 @@ void delay_until (struct timeval* next_activation)
 
 int main ()
 {
-  struct timeval clk_period = { 1, 0 };
-  struct timeval next_activation;
+  //struct timeval clk_period = { 0, 500*1000 };
+  //struct timeval next_activation;
+  struct timespec periodo, restante;
+  periodo.tv_sec = 0;
+  periodo.tv_nsec = 500*1000000;
+  int phase = 0;
   fsm_t* mon_fsm  = fsm_new (monedero);
   fsm_t* cofm_fsm = fsm_new (cofm);
 
@@ -264,26 +268,43 @@ int main ()
   wiringPiISR (GPIO_MONEDERO, INT_EDGE_FALLING, moneda_isr);
   wiringPiISR (GPIO_DEVOLVER, INT_EDGE_FALLING, devolver_isr);
 
-  gettimeofday (&next_activation, NULL);
+  //gettimeofday (&next_activation, NULL);
   while (scanf("%d %d %d %d %d", &button, &moneda, &moneda_introd, &timer, &bot_devolver) == 5) {
     DEBUG({
     printf ("El estado del monedero es: %i \n", mon_fsm->current_state);
     printf ("El estado de la maq de cafe es: %i \n", cofm_fsm->current_state);
     })
+    /*
+    nanosleep(&periodo, &restante);
+    switch (phase) {
+      case 0:
+	fsm_fire (cofm_fsm);
+        fsm_fire (mon_fsm);
+	printf ("Se ejecutan ambas fsm");
+        break;
+      case  1: case  2: case  3: case  4: case  5:
+        fsm_fire (mon_fsm);
+	printf ("Solo se ejecuta el monedero");
+        break;
+    }
+    */
 
-    clock_gettime(CLOCK_MONOTONIC, &inicioMonedero);
+    MEDIDATIEMPO({clock_gettime(CLOCK_MONOTONIC, &inicioMonedero);})
     fsm_fire (mon_fsm);
-    clock_gettime(CLOCK_MONOTONIC, &finMonedero);
-    clock_gettime(CLOCK_MONOTONIC, &inicioCofm);
+    MEDIDATIEMPO({clock_gettime(CLOCK_MONOTONIC, &finMonedero);})
+    MEDIDATIEMPO({clock_gettime(CLOCK_MONOTONIC, &inicioCofm);})
     fsm_fire (cofm_fsm);
-    clock_gettime(CLOCK_MONOTONIC, &finCofm);
+    MEDIDATIEMPO({clock_gettime(CLOCK_MONOTONIC, &finCofm);})
 
+    MEDIDATIEMPO({
     //Impresion tiempo de ejecucion tareas
     int tiempoMonedero = (finMonedero.tv_nsec - inicioMonedero.tv_nsec);
     int tiempoCofm = (finCofm.tv_nsec - inicioCofm.tv_nsec);
     printf("Tiempo de ejecucion de Monedero: %d nsecs\n", tiempoMonedero);
     printf("Tiempo de ejecucion de Cofm: %d nsecs\n", tiempoCofm);
-    timeval_add (&next_activation, &next_activation, &clk_period);
-    delay_until (&next_activation);
+    })
+
+    //timeval_add (&next_activation, &next_activation, &clk_period);
+    phase = (phase + 1) % 6;
   }
 }

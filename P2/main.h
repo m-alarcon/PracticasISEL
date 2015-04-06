@@ -7,4 +7,10 @@
 #define DEBUG(x)
 #endif
 
+#ifndef NMEDIDATIEMPO
+#define MEDIDATIEMPO(x) x
+#else
+#define MEDIDATIEMPO(x)
+#endif
+
 #endif
