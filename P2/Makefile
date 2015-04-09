@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-g -Wall -O -I.
+CFLAGS=-g -Wall -O -I. -DNMEDIDATIEMPO -DNDEBUG
 LDFLAGS=
 LDLIBS=-lwiringPi -lrt
 

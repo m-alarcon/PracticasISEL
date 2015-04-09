@@ -89,7 +89,7 @@ static int esperando_dinero (fsm_t* this)
     DEBUG({printf ("Se ha metido dinero suficiente \n");})
     return 1;
   } else if (bot_devolver == 1) {
-    return 1; //Falta comprobar este
+    return 1;
   } else {
     return 0;
   }
@@ -106,7 +106,7 @@ static int devolver_cambio (fsm_t* this)
     DEBUG({printf ("Hay que devolver: %i cents\n", devolver);})
     dinero = 0;
     devolver = 0;
-    return 1; //Falta comprobar
+    return 1;
   } else if (dinero == PRECIO && cafe == 1){
     DEBUG({printf ("No hay que devolver nada\n");})
     dinero = 0;
@@ -116,15 +116,19 @@ static int devolver_cambio (fsm_t* this)
     DEBUG({printf ("Hay que devolver: %i cents\n", devolver);})
     dinero = 0;
     bot_devolver = 0;
-    return 1; //Falta comprobar
+    return 0;
+  } else if (dinero < PRECIO && cafe == 1){
+    devolver = dinero;
+    dinero = 0;
+    DEBUG({printf ("Se ha hecho el cafe y hay que devolver %i cents\n", devolver);})
+    return 1;
   } else if (bot_devolver == 1){
     devolver = dinero;
     DEBUG({printf ("Hay que devolver: %i cents\n", devolver);})
     dinero = 0;
     bot_devolver = 0;
-    return 1; //Falta comprobar
+    return 1;
   } else {
-    DEBUG({printf ("La variable bot_devolver es: %i\n", bot_devolver);})
     return 0;
   }
 }
@@ -243,11 +247,8 @@ void delay_until (struct timeval* next_activation)
 
 int main ()
 {
-  //struct timeval clk_period = { 0, 500*1000 };
-  //struct timeval next_activation;
-  struct timespec periodo, restante;
-  periodo.tv_sec = 0;
-  periodo.tv_nsec = 500*1000000;
+  struct timeval clk_period = { 0, 300*1000 };
+  struct timeval next_activation;
   int phase = 0;
   fsm_t* mon_fsm  = fsm_new (monedero);
   fsm_t* cofm_fsm = fsm_new (cofm);
@@ -268,32 +269,25 @@ int main ()
   wiringPiISR (GPIO_MONEDERO, INT_EDGE_FALLING, moneda_isr);
   wiringPiISR (GPIO_DEVOLVER, INT_EDGE_FALLING, devolver_isr);
 
-  //gettimeofday (&next_activation, NULL);
+  gettimeofday (&next_activation, NULL);
   while (scanf("%d %d %d %d %d", &button, &moneda, &moneda_introd, &timer, &bot_devolver) == 5) {
-    DEBUG({
+
     printf ("El estado del monedero es: %i \n", mon_fsm->current_state);
     printf ("El estado de la maq de cafe es: %i \n", cofm_fsm->current_state);
-    })
-    /*
-    nanosleep(&periodo, &restante);
+
+    delay_until(&next_activation);
     switch (phase) {
       case 0:
 	fsm_fire (cofm_fsm);
         fsm_fire (mon_fsm);
-	printf ("Se ejecutan ambas fsm");
-        break;
-      case  1: case  2: case  3: case  4: case  5:
-        fsm_fire (mon_fsm);
-	printf ("Solo se ejecuta el monedero");
         break;
     }
-    */
 
     MEDIDATIEMPO({clock_gettime(CLOCK_MONOTONIC, &inicioMonedero);})
-    fsm_fire (mon_fsm);
+    //fsm_fire (mon_fsm);
     MEDIDATIEMPO({clock_gettime(CLOCK_MONOTONIC, &finMonedero);})
     MEDIDATIEMPO({clock_gettime(CLOCK_MONOTONIC, &inicioCofm);})
-    fsm_fire (cofm_fsm);
+    //fsm_fire (cofm_fsm);
     MEDIDATIEMPO({clock_gettime(CLOCK_MONOTONIC, &finCofm);})
 
     MEDIDATIEMPO({
@@ -304,7 +298,7 @@ int main ()
     printf("Tiempo de ejecucion de Cofm: %d nsecs\n", tiempoCofm);
     })
 
-    //timeval_add (&next_activation, &next_activation, &clk_period);
-    phase = (phase + 1) % 6;
+    timeval_add (&next_activation, &next_activation, &clk_period);
+    phase = (phase + 1) % 1;
   }
 }
