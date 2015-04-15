@@ -116,6 +116,11 @@ static int devolver_cambio (fsm_t* this)
     DEBUG({printf ("Hay que devolver: %i cents\n", devolver);})
     dinero = 0;
     bot_devolver = 0;
+    return 0;
+  } else if (dinero < PRECIO && cafe == 1){
+    devolver = dinero;
+    dinero = 0;
+    DEBUG({printf ("Se ha hecho el cafe y hay que devolver %i cents\n", devolver);})
     return 1;
   } else if (bot_devolver == 1){
     devolver = dinero;
@@ -123,9 +128,8 @@ static int devolver_cambio (fsm_t* this)
     dinero = 0;
     bot_devolver = 0;
     return 1;
-  } else { 
-    DEBUG({printf ("La variable bot_devolver es: %i\n", bot_devolver);})
-    return 0; 
+  } else {
+    return 0;
   }
 }
 
