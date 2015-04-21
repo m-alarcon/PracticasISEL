@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -8,7 +9,6 @@
 #include <wiringPi.h>
 #include "fsm.h"
 #include "main.h"
-#include <pthread.h>
 
 #define GPIO_BUTTON	2
 #define GPIO_LED	3
@@ -39,10 +39,8 @@ enum cofm_state {
 
 //Declaración de variables sincronización fsm
 static int hayDinero = 0;
-static pthread_mutex_t hayDinero_mutex;
 static int dinero = 0;
 static int cafe = 0;
-static pthread_mutex_t cafe_mutex;
 static int moneda_introd = 0;
 
 static int moneda = 0;
@@ -100,15 +98,9 @@ static int esperando_dinero (fsm_t* this)
 
 static int devolver = 0;
 static int haciendo_cafe = 0;
-static pthread_mutex_t haciendo_cafe_mutex;
-
 
 static int devolver_cambio (fsm_t* this){
   dinero += moneda_introd;
-  while (1) {
-    pthread_wait_np ((unsigned long*) this);
-    pthread_mutex_lock (&cafe_mutex);
-    pthread_mutex_lock (&haciendo_cafe_mutex);
 
    if (dinero > PRECIO && cafe == 1){
     devolver = dinero - PRECIO;
@@ -140,16 +132,9 @@ static int devolver_cambio (fsm_t* this){
   } else {
     return 0;
   }
-  pthread_mutex_unlock (&cafe_mutex);
-  pthread_mutex_unlock (&haciendo_cafe_mutex);
-  }
 }
 
 static int button_pressed (fsm_t* this){
-  while (1) {
-    pthread_wait_np ((unsigned long*) this);
-    pthread_mutex_lock (&hayDinero_mutex);
-    pthread_mutex_lock (&haciendo_cafe_mutex);
   if (hayDinero == 1 && button == 1 && bot_devolver == 0){
     int ret = button;
     haciendo_cafe = 1;
@@ -159,9 +144,6 @@ static int button_pressed (fsm_t* this){
   } else {
     return 0;
   }
-    pthread_mutex_unlock (&hayDinero_mutex);
-    pthread_mutex_unlock (&haciendo_cafe_mutex);
- }
 }
 
 static int timer_finished (fsm_t* this)
@@ -194,40 +176,21 @@ static void milk (fsm_t* this)
 
 static void finish (fsm_t* this)
 {
-  //while (1) {
-    //pthread_wait_np ((unsigned long*) this);
     digitalWrite (GPIO_MILK, LOW);
     digitalWrite (GPIO_LED, HIGH);
-    //pthread_mutex_lock (&cafe_mutex);
     cafe = 1;
-    //pthread_mutex_unlock (&cafe_mutex);
-  //}
 }
 
 static void hay_dinero (fsm_t* this)
 {
-  while (1) {
-    pthread_wait_np ((unsigned long*) this);
-    pthread_mutex_lock (&hayDinero_mutex);
     hayDinero = 1;
-    pthread_mutex_unlock (&hayDinero_mutex);
-  }
 }
 
 static void cafe_servido (fsm_t* this)
 {
-  //while (1) {
-    //pthread_wait_np ((unsigned long*) this);
-    //pthread_mutex_lock (&hayDinero_mutex);
     hayDinero = 0;
-    //pthread_mutex_unlock (&hayDinero_mutex);
-    //pthread_mutex_lock (&cafe_mutex);
     cafe = 0;
-    //pthread_mutex_unlock (&cafe_mutex);
-    //pthread_mutex_lock (&haciendo_cafe_mutex);
     haciendo_cafe = 0;
-    //pthread_mutex_unlock (&haciendo_cafe_mutex);
-  //}
 }
 
 // Descripción fsm monedero
@@ -249,6 +212,13 @@ static fsm_trans_t cofm[] = {
 
 
 // Utility functions, should be elsewhere
+
+int
+timeval_less (struct timeval* a, struct timeval* b)
+{
+  return (a->tv_sec  < b->tv_sec) ||
+    (    (a->tv_sec == b->tv_sec) && (a->tv_usec < b->tv_usec)    );
+}
 
 // res = a - b
 void
@@ -279,36 +249,116 @@ void delay_until (struct timeval* next_activation)
   timeval_sub (&timeout, next_activation, &now);
   select (0, NULL, NULL, NULL, &timeout);
 }
-static void create_task (pthread_t* tid, void *(*f)(void *), void* arg,
-	 int period_ms, int prio, int stacksize){
-  pthread_attr_t attr;
-  struct sched_param sparam;
-  struct timespec next_activation;
-  struct timespec period = { 0, 0L };
 
-  sparam.sched_priority = sched_get_priority_min (SCHED_FIFO) + prio;
-  clock_gettime (CLOCK_REALTIME, &next_activation);
-  next_activation.tv_sec += 1;
-  period.tv_sec  = period_ms / 1000;
-  period.tv_nsec = (period_ms % 1000) * 1000L;
+struct event_handler_t;
+typedef void (*eh_func_t) (struct event_handler_t*);
 
-  pthread_attr_init (&attr);
-  pthread_attr_setstacksize (&attr, stacksize);
-  pthread_attr_setscope (&attr, PTHREAD_SCOPE_SYSTEM);
-  pthread_attr_setschedpolicy (&attr, SCHED_FIFO);
-  pthread_attr_setschedparam (&attr, &sparam);
-  pthread_create (tid, &attr, f, arg);
-  pthread_make_periodic_np (pthread_self(), &next_activation, &period);
+struct event_handler_t {
+  int prio;
+  struct timeval next_activation;
+  eh_func_t run;
+};
+typedef struct event_handler_t EventHandler;
+
+void event_handler_init (EventHandler* eh, int prio, eh_func_t run);
+void event_handler_run (EventHandler* eh);
+
+void reactor_init (void);
+void reactor_add_handler (EventHandler* eh);
+void reactor_handle_events (void);
+
+struct reactor_t {
+  EventHandler* ehs[10];
+  int n_ehs;
+};
+typedef struct reactor_t Reactor;
+
+void
+event_handler_init (EventHandler* eh, int prio, eh_func_t run)
+{
+  eh->prio = prio;
+  gettimeofday (&eh->next_activation, NULL);
+  eh->run = run;
 }
 
-static void init_mutex (pthread_mutex_t* m, int prioceiling)
+void
+event_handler_run (EventHandler* eh)
 {
-  pthread_mutexattr_t attr;
-  pthread_mutexattr_init (&attr);
-  pthread_mutexattr_setprotocol (&attr, PTHREAD_PRIO_PROTECT);
-  pthread_mutex_init (m, &attr);
-  pthread_mutex_setprioceiling
-    (m, sched_get_priority_min(SCHED_FIFO) + prioceiling, NULL);
+  eh->run (eh);
+}
+
+static Reactor r;
+
+void
+reactor_init (void)
+{
+  r.n_ehs = 0;
+}
+
+int
+compare_prio (const void* a, const void* b)
+{
+  EventHandler* eh1 = *(EventHandler**) a;
+  EventHandler* eh2 = *(EventHandler**) b;
+  if (eh1->prio > eh2->prio)
+    return -1;
+  if (eh1->prio < eh2->prio)
+    return 1;
+  return 0;
+}
+
+void
+reactor_add_handler (EventHandler* eh)
+{
+  r.ehs[r.n_ehs++] = eh;
+  qsort (r.ehs, r.n_ehs, sizeof (EventHandler*), compare_prio);
+}
+
+static struct timeval*
+reactor_next_timeout (void)
+{
+  static struct timeval next;
+  struct timeval now;
+  int i;
+
+  if (! r.n_ehs) return NULL;
+
+  gettimeofday(&now, NULL);
+  next.tv_sec = now.tv_sec + 24*60*60;
+  next.tv_usec = now.tv_usec;
+
+  for (i = 0; i < r.n_ehs; ++i) {
+    EventHandler* eh = r.ehs[i];
+    if (timeval_less (&eh->next_activation, &next)) {
+      next.tv_sec = eh->next_activation.tv_sec;
+      next.tv_usec = eh->next_activation.tv_usec;
+    }
+  }
+  if (timeval_less (&next, &now)) {
+    next.tv_sec = now.tv_sec;
+    next.tv_usec = now.tv_usec;
+  }
+  return &next;
+}
+
+void
+reactor_handle_events (void)
+{
+  int i;
+  struct timeval timeout, now;
+  struct timeval* next_activation = reactor_next_timeout();
+
+  gettimeofday (&now, NULL);
+  timeval_sub (&timeout, next_activation, &now);
+  select (0, NULL, NULL, NULL, &timeout);
+
+  gettimeofday (&now, NULL);
+  for (i = 0; i < r.n_ehs; ++i) {
+    EventHandler* eh = r.ehs[i];
+    if (timeval_less (&eh->next_activation, &now)) {
+      event_handler_run (eh);
+    }
+  }
 }
 
 fsm_t* mon_fsm;
@@ -326,15 +376,10 @@ static void* cofm_fire (void* arg){
 
 int main (){
 
+  EventHandler money, coffee;
+
   mon_fsm  = fsm_new (monedero);
   cofm_fsm = fsm_new (cofm);
-
-  pthread_t money, coffee;
-  void* ret;
-
-  init_mutex (&hayDinero_mutex, 2);
-  init_mutex (&cafe_mutex, 2);
-  init_mutex (&haciendo_cafe_mutex, 2);
 
   wiringPiSetup();
   pinMode (GPIO_BUTTON, INPUT);
@@ -349,18 +394,19 @@ int main (){
   wiringPiISR (GPIO_MONEDERO, INT_EDGE_FALLING, moneda_isr);
   wiringPiISR (GPIO_DEVOLVER, INT_EDGE_FALLING, devolver_isr);
 
+  reactor_init();
+
+  event_handler_init (&money, 2, (eh_func_t) mon_fire);
+  reactor_add_handler (&money);
+  event_handler_init (&coffee, 1, (eh_func_t) cofm_fire);
+  reactor_add_handler (&coffee);
+
   while (scanf("%d %d %d %d %d", &button, &moneda, &moneda_introd, &timer, &bot_devolver) == 5) {
 
     printf ("El estado del monedero es: %i \n", mon_fsm->current_state);
     printf ("El estado de la maq de cafe es: %i \n", cofm_fsm->current_state);
 
-    create_task (&money,mon_fire, NULL,300 , 2, 1024);
-    create_task (&coffee,cofm_fire, NULL,300, 1, 1024);
-
-    pthread_join(money, &ret);
-    pthread_join(coffee, &ret);
-
-
+    reactor_handle_events();
   }
   return 0;
 }
