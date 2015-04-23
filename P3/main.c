@@ -105,10 +105,9 @@ static pthread_mutex_t haciendo_cafe_mutex;
 
 static int devolver_cambio (fsm_t* this){
   dinero += moneda_introd;
-  while (1) {
-    pthread_wait_np ((unsigned long*) this);
-    pthread_mutex_lock (&cafe_mutex);
-    pthread_mutex_lock (&haciendo_cafe_mutex);
+
+//  pthread_mutex_lock (&cafe_mutex);
+//  pthread_mutex_lock (&haciendo_cafe_mutex);
 
    if (dinero > PRECIO && cafe == 1){
     devolver = dinero - PRECIO;
@@ -140,16 +139,16 @@ static int devolver_cambio (fsm_t* this){
   } else {
     return 0;
   }
-  pthread_mutex_unlock (&cafe_mutex);
-  pthread_mutex_unlock (&haciendo_cafe_mutex);
-  }
+//  pthread_mutex_unlock (&cafe_mutex);
+//  pthread_mutex_unlock (&haciendo_cafe_mutex);
+
 }
 
 static int button_pressed (fsm_t* this){
-  while (1) {
-    pthread_wait_np ((unsigned long*) this);
-    pthread_mutex_lock (&hayDinero_mutex);
-    pthread_mutex_lock (&haciendo_cafe_mutex);
+
+//    pthread_mutex_lock (&hayDinero_mutex);
+//    pthread_mutex_lock (&haciendo_cafe_mutex);
+
   if (hayDinero == 1 && button == 1 && bot_devolver == 0){
     int ret = button;
     haciendo_cafe = 1;
@@ -159,9 +158,9 @@ static int button_pressed (fsm_t* this){
   } else {
     return 0;
   }
-    pthread_mutex_unlock (&hayDinero_mutex);
-    pthread_mutex_unlock (&haciendo_cafe_mutex);
- }
+//    pthread_mutex_unlock (&hayDinero_mutex);
+//    pthread_mutex_unlock (&haciendo_cafe_mutex);
+
 }
 
 static int timer_finished (fsm_t* this)
@@ -194,40 +193,31 @@ static void milk (fsm_t* this)
 
 static void finish (fsm_t* this)
 {
-  //while (1) {
-    //pthread_wait_np ((unsigned long*) this);
-    digitalWrite (GPIO_MILK, LOW);
-    digitalWrite (GPIO_LED, HIGH);
-    //pthread_mutex_lock (&cafe_mutex);
-    cafe = 1;
-    //pthread_mutex_unlock (&cafe_mutex);
-  //}
+  digitalWrite (GPIO_MILK, LOW);
+  digitalWrite (GPIO_LED, HIGH);
+//  pthread_mutex_lock (&cafe_mutex);
+  cafe = 1;
+//  pthread_mutex_unlock (&cafe_mutex);
 }
 
 static void hay_dinero (fsm_t* this)
 {
-  while (1) {
-    pthread_wait_np ((unsigned long*) this);
-    pthread_mutex_lock (&hayDinero_mutex);
-    hayDinero = 1;
-    pthread_mutex_unlock (&hayDinero_mutex);
-  }
+//  pthread_mutex_lock (&hayDinero_mutex);
+  hayDinero = 1;
+//  pthread_mutex_unlock (&hayDinero_mutex);
 }
 
 static void cafe_servido (fsm_t* this)
 {
-  //while (1) {
-    //pthread_wait_np ((unsigned long*) this);
-    //pthread_mutex_lock (&hayDinero_mutex);
+//    pthread_mutex_lock (&hayDinero_mutex);
     hayDinero = 0;
-    //pthread_mutex_unlock (&hayDinero_mutex);
-    //pthread_mutex_lock (&cafe_mutex);
+//    pthread_mutex_unlock (&hayDinero_mutex);
+//    pthread_mutex_lock (&cafe_mutex);
     cafe = 0;
-    //pthread_mutex_unlock (&cafe_mutex);
-    //pthread_mutex_lock (&haciendo_cafe_mutex);
+//    pthread_mutex_unlock (&cafe_mutex);
+//    pthread_mutex_lock (&haciendo_cafe_mutex);
     haciendo_cafe = 0;
-    //pthread_mutex_unlock (&haciendo_cafe_mutex);
-  //}
+//    pthread_mutex_unlock (&haciendo_cafe_mutex);
 }
 
 // Descripción fsm monedero
@@ -279,18 +269,19 @@ void delay_until (struct timeval* next_activation)
   timeval_sub (&timeout, next_activation, &now);
   select (0, NULL, NULL, NULL, &timeout);
 }
+
 static void create_task (pthread_t* tid, void *(*f)(void *), void* arg,
 	 int period_ms, int prio, int stacksize){
   pthread_attr_t attr;
   struct sched_param sparam;
   struct timespec next_activation;
-  struct timespec period = { 0, 0L };
+  struct timespec period = { 0, 0 };
 
   sparam.sched_priority = sched_get_priority_min (SCHED_FIFO) + prio;
   clock_gettime (CLOCK_REALTIME, &next_activation);
   next_activation.tv_sec += 1;
   period.tv_sec  = period_ms / 1000;
-  period.tv_nsec = (period_ms % 1000) * 1000L;
+  period.tv_nsec = (period_ms % 1000) * 1000;
 
   pthread_attr_init (&attr);
   pthread_attr_setstacksize (&attr, stacksize);
@@ -305,22 +296,45 @@ static void init_mutex (pthread_mutex_t* m, int prioceiling)
 {
   pthread_mutexattr_t attr;
   pthread_mutexattr_init (&attr);
-  pthread_mutexattr_setprotocol (&attr, PTHREAD_PRIO_PROTECT);
+  // pthread_mutexattr_setprotocol (&attr, PTHREAD_PRIO_PROTECT);
+  pthread_mutexattr_setprotocol (&attr, PTHREAD_PRIO_INHERIT);
   pthread_mutex_init (m, &attr);
-  pthread_mutex_setprioceiling
-    (m, sched_get_priority_min(SCHED_FIFO) + prioceiling, NULL);
+  // pthread_mutex_setprioceiling
+  //   (&m, sched_get_priority_min (SCHED_FIFO) + prioceiling);
 }
 
 fsm_t* mon_fsm;
 fsm_t* cofm_fsm;
 
-static void* mon_fire (void* arg){
-  fsm_fire(mon_fsm);
+static void* mon_fire (void* arg)
+{
+  while (scanf("%d %d %d %d %d", &button, &moneda, &moneda_introd, &timer, &bot_devolver) == 5) {
+    printf ("El estado del monedero es: %i \n", mon_fsm->current_state);
+    pthread_wait_np ((unsigned long*) arg);
+    pthread_mutex_lock (&hayDinero_mutex);
+    pthread_mutex_lock (&cafe_mutex);
+    pthread_mutex_lock (&haciendo_cafe_mutex);
+    fsm_fire(mon_fsm);
+    pthread_mutex_unlock (&hayDinero_mutex);
+    pthread_mutex_unlock (&cafe_mutex);
+    pthread_mutex_unlock (&haciendo_cafe_mutex);
+  }
   return 0;
 }
 
-static void* cofm_fire (void* arg){
-  fsm_fire(cofm_fsm);
+static void* cofm_fire (void* arg)
+{
+  while (scanf("%d %d %d %d %d", &button, &moneda, &moneda_introd, &timer, &bot_devolver) == 5) {
+    printf ("El estado de la maq de cafe es: %i \n", cofm_fsm->current_state);
+    pthread_wait_np ((unsigned long*) arg);
+    pthread_mutex_lock (&hayDinero_mutex);
+    pthread_mutex_lock (&cafe_mutex);
+    pthread_mutex_lock (&haciendo_cafe_mutex);
+    fsm_fire(cofm_fsm);
+    pthread_mutex_unlock (&hayDinero_mutex);
+    pthread_mutex_unlock (&cafe_mutex);
+    pthread_mutex_unlock (&haciendo_cafe_mutex);
+  }
   return 0;
 }
 
@@ -329,12 +343,18 @@ int main (){
   mon_fsm  = fsm_new (monedero);
   cofm_fsm = fsm_new (cofm);
 
-  pthread_t money, coffee;
+  pthread_t coffee, money;
   void* ret;
 
   init_mutex (&hayDinero_mutex, 2);
-  init_mutex (&cafe_mutex, 2);
-  init_mutex (&haciendo_cafe_mutex, 2);
+  init_mutex (&cafe_mutex, 1);
+  init_mutex (&haciendo_cafe_mutex, 1);
+
+  create_task (&money,  mon_fire,  NULL, 300, 2, 1024);
+  create_task (&coffee, cofm_fire, NULL, 300, 1, 1024);
+
+  pthread_join(money, &ret);
+  pthread_join(coffee, &ret);
 
   wiringPiSetup();
   pinMode (GPIO_BUTTON, INPUT);
@@ -349,18 +369,5 @@ int main (){
   wiringPiISR (GPIO_MONEDERO, INT_EDGE_FALLING, moneda_isr);
   wiringPiISR (GPIO_DEVOLVER, INT_EDGE_FALLING, devolver_isr);
 
-  while (scanf("%d %d %d %d %d", &button, &moneda, &moneda_introd, &timer, &bot_devolver) == 5) {
-
-    printf ("El estado del monedero es: %i \n", mon_fsm->current_state);
-    printf ("El estado de la maq de cafe es: %i \n", cofm_fsm->current_state);
-
-    create_task (&money,mon_fire, NULL,300 , 2, 1024);
-    create_task (&coffee,cofm_fire, NULL,300, 1, 1024);
-
-    pthread_join(money, &ret);
-    pthread_join(coffee, &ret);
-
-
-  }
   return 0;
 }
