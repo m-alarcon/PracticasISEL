@@ -364,14 +364,18 @@ reactor_handle_events (void)
 fsm_t* mon_fsm;
 fsm_t* cofm_fsm;
 
-static void* mon_fire (void* arg){
+static void* mon_fire (EventHandler* eh)
+{
+  static struct timeval period = { 0, 300*1000 };
   fsm_fire(mon_fsm);
-  return 0;
+  timeval_add (&eh->next_activation, &eh->next_activation, &period);
 }
 
-static void* cofm_fire (void* arg){
+static void* cofm_fire (EventHandler* eh)
+{
+  static struct timeval period = { 0, 300*1000 };
   fsm_fire(cofm_fsm);
-  return 0;
+  timeval_add (&eh->next_activation, &eh->next_activation, &period);
 }
 
 int main (){
