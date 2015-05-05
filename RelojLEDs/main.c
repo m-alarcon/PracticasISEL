@@ -13,38 +13,32 @@ static char button_press;
 static void buttonH_isr (void) { button_press = 'h'; }
 static void buttonM_isr (void) { button_press = 'm'; }
 
-static int modificarHora (fsm_t* this) {
+static int modificarHora (fsm_t* fsm) {
 
-  int trans = 0;
-  trans = flag_sensor;
-  if (flag_sensor == 1)
-    flag_sensor = 0;
-  switch (screen_getchar()/*button_press*/){
-    case 'h':
-      printf( "\n Has pulsado H");
-      pthread_mutex_lock (&horario_mutex);
-      t.hora++;
-      if (t.hora==24)
-        t.hora=00;
-      pthread_mutex_unlock (&horario_mutex);
-      break;
-
-    case 'm':
-      printf( "\n Has pulsado M");
-      pthread_mutex_lock (&horario_mutex);
-      t.minutos++;
-      if (t.minutos==60){
-        t.minutos = 00;
+    switch (screen_getchar()){
+      case 'h':
+        printf( "\n Has pulsado H");   
+        pthread_mutex_lock (&horario_mutex);
         t.hora++;
-      }
-      pthread_mutex_unlock (&horario_mutex);
-      break;
+        if (t.hora==24)
+          t.hora=00;
+        pthread_mutex_unlock (&horario_mutex);
+        break;
 
-      default: break;
+      case 'm':
+        printf( "\n Has pulsado M");
+        pthread_mutex_lock (&horario_mutex);
+        t.minutos++;
+        if (t.minutos==60){
+          t.minutos = 00;
+          t.hora++;
+        }
+        pthread_mutex_unlock (&horario_mutex);
+
+    }
+    codificarEnMatriz();
   }
-  codificarEnMatriz();
-
-  return trans;
+  return NULL;
 }
 
 static void* contadorTiempo (void* arg) {
@@ -80,10 +74,8 @@ static void* contadorTiempo (void* arg) {
   return NULL;
 }
 
-static int pintarHora (fsm_t* this){
+static void pintarHora (fsm_t* fsm){
 
-  int trans = 0;
-  trans = flag_sensor;
   if (flag_sensor=='1') {
     flag_sensor='0';
 
@@ -102,7 +94,7 @@ static int pintarHora (fsm_t* this){
     }
   }
 
-  return trans;
+  return NULL;
 }
 
 static void codificarEnMatriz(){
@@ -388,12 +380,17 @@ static void* simulaSensor(void* arg){
 
 // Descripción fsm reloj
 static fsm_trans_t reloj[] = {
-  { MOD_HORA, modificarHora ,PINT_HORA,              },
-  { PINT_HORA, pintarHora    ,MOD_HORA,               },
-  { -1, NULL, -1, NULL },
+  { PINTA_HORA, 0, PINTA_HORA, pintarHora },
+  { -1, -1, -1, NULL },
+};
+
+static fsm_trans_t modificador[] = {
+  { MODIFICA_HORA, 0, MODIFICA_HORA, pintarHora },
+  { -1, -1, -1, NULL },
 };
 
 fsm_t* reloj_fsm;
+fsm_t* modificador_fsm;
 
 static void* reloj_fire (void* arg){
 
@@ -404,7 +401,21 @@ static void* reloj_fire (void* arg){
   while (1) {
     delay_until (&next_activation);
     timeval_add (&next_activation, &next_activation, &period);
-    fsm_fire(reloj_fsm);
+    fsm_fire(reloj_fsm, 0);
+ }
+  return 0;
+}
+
+static void* modificador_fire (void* arg){
+
+  struct timeval next_activation;
+  struct timeval period = { 0, 2000 };
+
+  gettimeofday (&next_activation, NULL);
+  while (1) {
+    delay_until (&next_activation);
+    timeval_add (&next_activation, &next_activation, &period);
+    fsm_fire(modificador_fsm, 0);
  }
   return 0;
 }
@@ -412,6 +423,7 @@ static void* reloj_fire (void* arg){
 int main (void){
 
   reloj_fsm = fsm_new(reloj);
+  modificador_fsm = fsm_new(modificador);
 
   limpiaMatrizNumero();
   limpiaMatrizLEDS();
@@ -425,11 +437,11 @@ int main (void){
 
   screen_init(2);
 
-  pthread_t threadReloj, threadTimer, threadSensor;
+  pthread_t threadReloj, threadModificador, threadTimer, threadSensor;
   void* ret;
 
-  init_mutex (&horario_mutex, 0);
-  init_mutex (&matriz_mutex, 0);
+  init_mutex (&horario_mutex, 4);
+  init_mutex (&matriz_mutex, 4);
 
   wiringPiSetup();
   pinMode (GPIO_BUTTON_M, INPUT);
@@ -445,16 +457,14 @@ int main (void){
   pinMode (38, OUTPUT);
   pinMode (40, OUTPUT);
 
-  create_task (&threadReloj,  reloj_fire, NULL, 2, 3 , 1024);
- // create_task (&threadAjustes, modificarHora , NULL, 1000 , 2, 1024);
-  create_task (&threadTimer, contadorTiempo , NULL, 60000, 1, 1024);
- //create_task (&threadPintar, pintarHora , NULL, 2 , 5, 1024);
-  create_task (&threadSensor, simulaSensor , NULL, 111, 2, 1024);
+  create_task (&threadReloj,  reloj_fire, NULL, 2, 4, 1024);
+  create_task (&threadTimer, contadorTiempo , NULL, 60000, 2, 1024);
+  create_task (&threadModificador, modificador_fire , NULL, 1000, 1, 1024);
+  create_task (&threadSensor, simulaSensor , NULL, 111, 3, 1024);
 
- pthread_join(threadReloj, &ret);
-  //pthread_join(threadAjustes, &ret);
+  pthread_join(threadReloj, &ret);
   pthread_join(threadTimer, &ret);
- // pthread_join(threadPintar, &ret);
+  pthread_join(threadModificador, &ret);
   pthread_join(threadSensor, &ret);
   return 0;
 }
