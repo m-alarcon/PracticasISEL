@@ -107,9 +107,6 @@ static pthread_mutex_t haciendo_cafe_mutex;
 static int devolver_cambio (fsm_t* this){
   dinero += moneda_introd;
 
-//   pthread_mutex_lock (&cafe_mutex);
-//   pthread_mutex_lock (&haciendo_cafe_mutex);
-//   pthread_mutex_lock (&devolver_mutex);
    if (dinero > PRECIO && cafe == 1){
     devolver = dinero - PRECIO;
     DEBUG({printf ("Hay que devolver: %i cents\n", devolver);})
@@ -140,15 +137,10 @@ static int devolver_cambio (fsm_t* this){
   } else {
     return 0;
   }
-//  pthread_mutex_unlock (&cafe_mutex);
-//  pthread_mutex_unlock (&haciendo_cafe_mutex);
-//  pthread_mutex_unlock (&devolver_mutex);
 }
 
 static int button_pressed (fsm_t* this){
 
-//    pthread_mutex_lock (&hayDinero_mutex);
-//    pthread_mutex_lock (&haciendo_cafe_mutex);
   if (hayDinero == 1 && button == 1 && bot_devolver == 0){
     int ret = button;
     haciendo_cafe = 1;
@@ -158,8 +150,6 @@ static int button_pressed (fsm_t* this){
   } else {
     return 0;
   }
-//    pthread_mutex_unlock (&hayDinero_mutex);
-//    pthread_mutex_unlock (&haciendo_cafe_mutex);
 }
 
 static int timer_finished (fsm_t* this)
@@ -194,29 +184,19 @@ static void finish (fsm_t* this)
 {
     digitalWrite (GPIO_MILK, LOW);
     digitalWrite (GPIO_LED, HIGH);
-//    pthread_mutex_lock (&cafe_mutex);
     cafe = 1;
-//    pthread_mutex_unlock (&cafe_mutex);
 }
 
 static void hay_dinero (fsm_t* this)
 {
-//    pthread_mutex_lock (&hayDinero_mutex);
     hayDinero = 1;
-//    pthread_mutex_unlock (&hayDinero_mutex);
 }
 
 static void cafe_servido (fsm_t* this)
 {
-//    pthread_mutex_lock (&hayDinero_mutex);
     hayDinero = 0;
-//    pthread_mutex_unlock (&hayDinero_mutex);
-//    pthread_mutex_lock (&cafe_mutex);
     cafe = 0;
-//    pthread_mutex_unlock (&cafe_mutex);
-//    pthread_mutex_lock (&haciendo_cafe_mutex);
     haciendo_cafe = 0;
-//    pthread_mutex_unlock (&haciendo_cafe_mutex);
 }
 
 // Descripción fsm monedero
