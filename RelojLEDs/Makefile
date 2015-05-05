@@ -11,7 +11,7 @@ SYS_LDLIBS = $(shell xeno-config --skin posix --ldflags)
 
 all: main
 
-main:	main.o tasks.o screen.o fsm.o
+main:	main.o tasks.o screen.o
 
 clean:
 	$(RM) *.o *~ main
