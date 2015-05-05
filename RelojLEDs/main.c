@@ -1,20 +1,62 @@
-#include <unistd.h>
+#include <stdio.h>
 #include <wiringPi.h>
 #include <time.h>
 #include <sys/time.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <pthread.h>
 #include "tasks.h"
 #include "screen.h"
-#include "fsm.h"
-#include "main.h"
 
-static char button_press;
-static void buttonH_isr (void) { button_press = 'h'; }
-static void buttonM_isr (void) { button_press = 'm'; }
+//------------------------------
 
-static int modificarHora (fsm_t* fsm) {
+struct horario{
+  int hora;
+  int minutos;
+};
 
+struct horario t;
+
+static int matrizDeLeds[8][23];
+int matrizDeLedsPintar[8][23];
+int matrizNumero[8][5];
+
+int horaAux;
+int minutosAux;
+int hora1;
+int hora2;
+int minuto1;
+int minuto2;
+int minuto2aux;
+
+char flag_sensor;
+
+static void* modificarHora(void*);
+static void* contadorTiempo(void*);
+static void* pintarHora(void*);
+static void* simulaSensor(void*);
+static void codificarEnMatriz();
+static void pinta_columna();
+static void getDigitosHoraMinuto();
+static void codificaNumero();
+static void limpiaMatrizNumero();
+static void limpiaMatrizLEDS();
+static void incluirDigitos();
+
+static pthread_mutex_t horario_mutex;
+static pthread_mutex_t matriz_mutex;
+
+//------------------------------
+
+static void* modificarHora (void* arg) {
+  struct timeval next_activation;
+  struct timeval now, timeout;
+  struct timeval period = { 0, 1000000 };
+  
+  gettimeofday (&next_activation, NULL);
+  while (1) {
+    gettimeofday (&now, NULL);
+    timeval_sub (&timeout, &next_activation, &now);
+    select (0, NULL, NULL, NULL, &timeout) ;
+    timeval_add (&next_activation, &next_activation, &period);
     switch (screen_getchar()){
       case 'h':
         printf( "\n Has pulsado H");   
@@ -43,11 +85,14 @@ static int modificarHora (fsm_t* fsm) {
 
 static void* contadorTiempo (void* arg) {
   struct timeval next_activation;
+  struct timeval now, timeout;
   struct timeval period = { 0, 60000000 };
-
+  
   gettimeofday (&next_activation, NULL);
   while (1) {
-    delay_until (&next_activation);
+    gettimeofday (&now, NULL);
+    timeval_sub (&timeout, &next_activation, &now);
+    select (0, NULL, NULL, NULL, &timeout) ;
     timeval_add (&next_activation, &next_activation, &period);
 
     pthread_mutex_lock (&horario_mutex);
@@ -70,30 +115,39 @@ static void* contadorTiempo (void* arg) {
     pthread_mutex_unlock (&horario_mutex);
 
  	  codificarEnMatriz();
-  }
+  }  
   return NULL;
 }
 
-static void pintarHora (fsm_t* fsm){
+static void* pintarHora (void* arg){
+  struct timeval next_activation;
+  struct timeval now, timeout;
+  struct timeval period = { 0, 2000 };
+  
+  gettimeofday (&next_activation, NULL);
+  while (1) {
+    gettimeofday (&now, NULL);
+    timeval_sub (&timeout, &next_activation, &now);
+    select (0, NULL, NULL, NULL, &timeout) ;
+    timeval_add (&next_activation, &next_activation, &period);
+    if (flag_sensor=='1') {
+      flag_sensor='0';
 
-  if (flag_sensor=='1') {
-    flag_sensor='0';
+      pthread_mutex_lock (&matriz_mutex);
+      for(int i=0;i<8;i++){
+      	for(int j=0;j<23;j++){
+      	  matrizDeLedsPintar[i][j]=matrizDeLeds[i][j];
+        }
+      }
+      pthread_mutex_unlock(&matriz_mutex);
 
-    pthread_mutex_lock (&matriz_mutex);
-    for(int i=0;i<8;i++){
-      for(int j=0;j<23;j++){
-        matrizDeLedsPintar[i][j]=matrizDeLeds[i][j];
+      for(int i=0;i<23;i++){
+      	struct timespec delay = { 0, 2525250L };
+      	pinta_columna(i);
+      	nanosleep (&delay, NULL);
       }
     }
-    pthread_mutex_unlock(&matriz_mutex);
-
-    for(int i=0;i<23;i++){
-      struct timespec delay = { 0, 2525250L };
-      pinta_columna(i);
-      nanosleep (&delay, NULL);
-    }
   }
-
   return NULL;
 }
 
@@ -121,8 +175,8 @@ static void codificarEnMatriz(){
 }
 
 static void pinta_columna(int columna){
-
- if(matrizDeLedsPintar[0][columna]==1)
+  
+  if(matrizDeLedsPintar[0][columna]==1)
     screen_printxy(columna,0,"*");
   else
     screen_printxy(columna,0," ");
@@ -155,16 +209,14 @@ static void pinta_columna(int columna){
   else
     screen_printxy(columna,7," ");
 
-/*
-/  digitalWrite(0,matrizDeLedsPintar[0][columna]);
+/*  digitalWrite(0,matrizDeLedsPintar[0][columna]);
 /  digitalWrite(1,matrizDeLedsPintar[1][columna]);
 /  digitalWrite(2,matrizDeLedsPintar[2][columna]);
 /  digitalWrite(3,matrizDeLedsPintar[3][columna]);
 /  digitalWrite(4,matrizDeLedsPintar[4][columna]);
 /  digitalWrite(5,matrizDeLedsPintar[5][columna]);
 /  digitalWrite(6,matrizDeLedsPintar[6][columna]);
-/  digitalWrite(7,matrizDeLedsPintar[7][columna]);
-*/
+/  digitalWrite(7,matrizDeLedsPintar[7][columna]); */
 }
 
 static void getDigitosHoraMinuto(){
@@ -266,7 +318,7 @@ static void codificaNumero(int numero){
       for(int g=0;g<7;g++)
         matrizNumero[g][4]=1;
       for(int h=1;h<5;h++)
-        matrizNumero[0][h]=1;
+        matrizNumero[0][h]=1;   
     break;
 
     case 8:
@@ -280,7 +332,7 @@ static void codificaNumero(int numero){
       matrizNumero[6][3]=1;
       matrizNumero[3][2]=1;
       matrizNumero[3][3]=1;
-    break;
+    break;   
 
     case 9:
        for (int f=1;f<5;f++){
@@ -300,14 +352,14 @@ static void codificaNumero(int numero){
 }
 
 static void limpiaMatrizNumero(){
-
+  
   for(int i=0;i<8;i++)
   {
     for(int j=0;j<23;j++)
     {
-      matrizNumero[i][j]=0;
+      matrizNumero[i][j]=0; 
     }
-  }
+  } 
 }
 
 static void limpiaMatrizLEDS(){
@@ -349,7 +401,7 @@ static void incluirDigitos(int indice){
             matrizDeLeds[i][j+12]=matrizNumero[i][j];
           }
         }
-      pthread_mutex_unlock (&matriz_mutex);
+      pthread_mutex_unlock (&matriz_mutex); 
     break;
 
     case 4:
@@ -359,18 +411,21 @@ static void incluirDigitos(int indice){
             matrizDeLeds[i][j+17]=matrizNumero[i][j];
           }
         }
-      pthread_mutex_unlock (&matriz_mutex);
+      pthread_mutex_unlock (&matriz_mutex); 
     break;
   }
 }
 
 static void* simulaSensor(void* arg){
   struct timeval next_activation;
+  struct timeval now, timeout;
   struct timeval period = { 0, 111000 };
-
+  
   gettimeofday (&next_activation, NULL);
   while (1) {
-    delay_until(&next_activation);
+    gettimeofday (&now, NULL);
+    timeval_sub (&timeout, &next_activation, &now);
+    select (0, NULL, NULL, NULL, &timeout) ;
     timeval_add (&next_activation, &next_activation, &period);
 
     flag_sensor='1';
@@ -378,52 +433,7 @@ static void* simulaSensor(void* arg){
   return NULL;
 }
 
-// Descripción fsm reloj
-static fsm_trans_t reloj[] = {
-  { PINTA_HORA, 0, PINTA_HORA, pintarHora },
-  { -1, -1, -1, NULL },
-};
-
-static fsm_trans_t modificador[] = {
-  { MODIFICA_HORA, 0, MODIFICA_HORA, pintarHora },
-  { -1, -1, -1, NULL },
-};
-
-fsm_t* reloj_fsm;
-fsm_t* modificador_fsm;
-
-static void* reloj_fire (void* arg){
-
-  struct timeval next_activation;
-  struct timeval period = { 0, 2000 };
-
-  gettimeofday (&next_activation, NULL);
-  while (1) {
-    delay_until (&next_activation);
-    timeval_add (&next_activation, &next_activation, &period);
-    fsm_fire(reloj_fsm, 0);
- }
-  return 0;
-}
-
-static void* modificador_fire (void* arg){
-
-  struct timeval next_activation;
-  struct timeval period = { 0, 2000 };
-
-  gettimeofday (&next_activation, NULL);
-  while (1) {
-    delay_until (&next_activation);
-    timeval_add (&next_activation, &next_activation, &period);
-    fsm_fire(modificador_fsm, 0);
- }
-  return 0;
-}
-
 int main (void){
-
-  reloj_fsm = fsm_new(reloj);
-  modificador_fsm = fsm_new(modificador);
 
   limpiaMatrizNumero();
   limpiaMatrizLEDS();
@@ -437,34 +447,21 @@ int main (void){
 
   screen_init(2);
 
-  pthread_t threadReloj, threadModificador, threadTimer, threadSensor;
+  pthread_t threadAjustes, threadTimer, threadPintar, threadSensor;
   void* ret;
 
-  init_mutex (&horario_mutex, 4);
-  init_mutex (&matriz_mutex, 4);
+  init_mutex (&horario_mutex, 0);  
+  init_mutex (&matriz_mutex, 0);
 
-  wiringPiSetup();
-  pinMode (GPIO_BUTTON_M, INPUT);
-  pinMode (GPIO_BUTTON_H, INPUT);
-  wiringPiISR (GPIO_BUTTON_M, INT_EDGE_FALLING, buttonM_isr);
-  wiringPiISR (GPIO_BUTTON_H, INT_EDGE_FALLING, buttonH_isr);
-  pinMode (29, OUTPUT);  //Pines Raspberry2
-  pinMode (31, OUTPUT);
-  pinMode (33, OUTPUT);
-  pinMode (35, OUTPUT);
-  pinMode (37, OUTPUT);
-  pinMode (36, OUTPUT);
-  pinMode (38, OUTPUT);
-  pinMode (40, OUTPUT);
+  create_task (&threadAjustes, modificarHora , NULL, 1000 , 2, 1024);
+  create_task (&threadTimer, contadorTiempo , NULL, 60000, 3, 1024);
+  create_task (&threadPintar, pintarHora , NULL, 2 , 5, 1024);
+  create_task (&threadSensor, simulaSensor , NULL, 111, 4, 1024);
 
-  create_task (&threadReloj,  reloj_fire, NULL, 2, 4, 1024);
-  create_task (&threadTimer, contadorTiempo , NULL, 60000, 2, 1024);
-  create_task (&threadModificador, modificador_fire , NULL, 1000, 1, 1024);
-  create_task (&threadSensor, simulaSensor , NULL, 111, 3, 1024);
 
-  pthread_join(threadReloj, &ret);
+  pthread_join(threadAjustes, &ret);
   pthread_join(threadTimer, &ret);
-  pthread_join(threadModificador, &ret);
+  pthread_join(threadPintar, &ret);
   pthread_join(threadSensor, &ret);
   return 0;
 }
