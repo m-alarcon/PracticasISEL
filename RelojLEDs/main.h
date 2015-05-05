@@ -5,14 +5,6 @@
 #define GPIO_BUTTON_M  15
 #define GPIO_BUTTON_H  16
 
-enum reloj_state {
-  RELOJ_PINTA,
-};
-
-enum reloj_state {
-  MODIFICADOR_HORA,
-};
-
 struct horario{
   int hora;
   int minutos;
@@ -34,9 +26,9 @@ int minuto2aux;
 
 char flag_sensor;
 
-static int modificarHora(fsm_t*);
+static void* modificarHora(void*);
 static void* contadorTiempo(void*);
-static int pintarHora(fsm_t*);
+static void* pintarHora(void*);
 static void* simulaSensor(void*);
 static void codificarEnMatriz();
 static void pinta_columna();
