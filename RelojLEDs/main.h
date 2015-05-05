@@ -6,11 +6,11 @@
 #define GPIO_BUTTON_H  16
 
 enum reloj_state {
-  PINTA_HORA,
+  RELOJ_PINTA,
 };
 
 enum reloj_state {
-  MODIFICA_HORA,
+  MODIFICADOR_HORA,
 };
 
 struct horario{
