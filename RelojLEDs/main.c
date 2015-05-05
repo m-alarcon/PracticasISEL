@@ -392,8 +392,13 @@ int main (void){
 
   minutosAux = 00;
   horaAux = 00;
-  t.hora = 14;
-  t.minutos = 45;
+
+  time_t hora;
+  struct tm *tiempo;
+  hora = time(NULL);
+  tiempo = localtime(&hora);
+  t.hora = tiempo->tm_hour;
+  t.minutos = tiempo->tm_min;
 
   flag_sensor = '0'; //ESCRITURA ATÓMICA EN CHAR, NOS EVITAMOS UN MUTEX
 
@@ -402,7 +407,7 @@ int main (void){
   pthread_t modificador, temporizador, reloj, sensor;
   void* ret;
 
-  init_mutex (&horario_mutex, 4);  
+  init_mutex (&horario_mutex, 4);
   init_mutex (&matriz_mutex, 4);
 
   create_task (&modificador, modificarHora , NULL, 1000 , 1, 1024);
