@@ -370,14 +370,11 @@ static void incluirDigitos(int indice){
 
 static void* simulaSensor(void* arg){
   struct timeval next_activation;
-  struct timeval now, timeout;
   struct timeval period = { 0, 111000 };
-  
+
   gettimeofday (&next_activation, NULL);
   while (1) {
-    gettimeofday (&now, NULL);
-    timeval_sub (&timeout, &next_activation, &now);
-    select (0, NULL, NULL, NULL, &timeout) ;
+    delay_until (&next_activation);
     timeval_add (&next_activation, &next_activation, &period);
 
     flag_sensor='1';
