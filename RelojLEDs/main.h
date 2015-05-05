@@ -5,9 +5,12 @@
 #define GPIO_BUTTON_M  15
 #define GPIO_BUTTON_H  16
 
-enum mon_state {
-  MOD_HORA,
-  PINT_HORA,
+enum reloj_state {
+  PINTA_HORA,
+};
+
+enum reloj_state {
+  MODIFICA_HORA,
 };
 
 struct horario{
