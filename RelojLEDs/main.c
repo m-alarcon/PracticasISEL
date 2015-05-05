@@ -5,82 +5,34 @@
 #include <pthread.h>
 #include "tasks.h"
 #include "screen.h"
+#include "fsm.h"
 
-//------------------------------
+static int modificarHora (fsm_t* this) {
 
-struct horario{
-  int hora;
-  int minutos;
-};
+  switch (screen_getchar()){
+    case 'h':
+      printf( "\n Has pulsado H");   
+      pthread_mutex_lock (&horario_mutex);
+      t.hora++;
+      if (t.hora==24)
+        t.hora=00;
+      pthread_mutex_unlock (&horario_mutex);
+      break;
 
-struct horario t;
-
-static int matrizDeLeds[8][23];
-int matrizDeLedsPintar[8][23];
-int matrizNumero[8][5];
-
-int horaAux;
-int minutosAux;
-int hora1;
-int hora2;
-int minuto1;
-int minuto2;
-int minuto2aux;
-
-char flag_sensor;
-
-static void* modificarHora(void*);
-static void* contadorTiempo(void*);
-static void* pintarHora(void*);
-static void* simulaSensor(void*);
-static void codificarEnMatriz();
-static void pinta_columna();
-static void getDigitosHoraMinuto();
-static void codificaNumero();
-static void limpiaMatrizNumero();
-static void limpiaMatrizLEDS();
-static void incluirDigitos();
-
-static pthread_mutex_t horario_mutex;
-static pthread_mutex_t matriz_mutex;
-
-//------------------------------
-
-static void* modificarHora (void* arg) {
-  struct timeval next_activation;
-  struct timeval now, timeout;
-  struct timeval period = { 0, 1000000 };
-  
-  gettimeofday (&next_activation, NULL);
-  while (1) {
-    gettimeofday (&now, NULL);
-    timeval_sub (&timeout, &next_activation, &now);
-    select (0, NULL, NULL, NULL, &timeout) ;
-    timeval_add (&next_activation, &next_activation, &period);
-    switch (screen_getchar()){
-      case 'h':
-        printf( "\n Has pulsado H");   
-        pthread_mutex_lock (&horario_mutex);
+    case 'm':
+      printf( "\n Has pulsado M");
+      pthread_mutex_lock (&horario_mutex);
+      t.minutos++;
+      if (t.minutos==60){
+        t.minutos = 00;
         t.hora++;
-        if (t.hora==24)
-          t.hora=00;
-        pthread_mutex_unlock (&horario_mutex);
-        break;
+      }
+      pthread_mutex_unlock (&horario_mutex);
 
-      case 'm':
-        printf( "\n Has pulsado M");
-        pthread_mutex_lock (&horario_mutex);
-        t.minutos++;
-        if (t.minutos==60){
-          t.minutos = 00;
-          t.hora++;
-        }
-        pthread_mutex_unlock (&horario_mutex);
-
-    }
-    codificarEnMatriz();
   }
-  return NULL;
+  codificarEnMatriz();
+
+  return 0;
 }
 
 static void* contadorTiempo (void* arg) {
@@ -101,54 +53,44 @@ static void* contadorTiempo (void* arg) {
     pthread_mutex_unlock (&horario_mutex);
 
     if (minutosAux<59)
-    	minutosAux++;
+      minutosAux++;
     else {
-    	minutosAux = 00;
-    	horaAux++;
+      minutosAux = 00;
+      horaAux++;
     }
     if (horaAux==24)
-    	horaAux = 00;
+      horaAux = 00;
 
     pthread_mutex_lock (&horario_mutex);
     t.hora = horaAux;
     t.minutos = minutosAux;
     pthread_mutex_unlock (&horario_mutex);
 
- 	  codificarEnMatriz();
+    codificarEnMatriz();
   }  
   return NULL;
 }
 
-static void* pintarHora (void* arg){
-  struct timeval next_activation;
-  struct timeval now, timeout;
-  struct timeval period = { 0, 2000 };
-  
-  gettimeofday (&next_activation, NULL);
-  while (1) {
-    gettimeofday (&now, NULL);
-    timeval_sub (&timeout, &next_activation, &now);
-    select (0, NULL, NULL, NULL, &timeout) ;
-    timeval_add (&next_activation, &next_activation, &period);
-    if (flag_sensor=='1') {
-      flag_sensor='0';
+static int pintarHora (fsm_t* this){
 
-      pthread_mutex_lock (&matriz_mutex);
-      for(int i=0;i<8;i++){
-      	for(int j=0;j<23;j++){
-      	  matrizDeLedsPintar[i][j]=matrizDeLeds[i][j];
-        }
-      }
-      pthread_mutex_unlock(&matriz_mutex);
+  if (flag_sensor=='1') {
+    flag_sensor='0';
 
-      for(int i=0;i<23;i++){
-      	struct timespec delay = { 0, 2525250L };
-      	pinta_columna(i);
-      	nanosleep (&delay, NULL);
+    pthread_mutex_lock (&matriz_mutex);
+    for(int i=0;i<8;i++){
+      for(int j=0;j<23;j++){
+        matrizDeLedsPintar[i][j]=matrizDeLeds[i][j];
       }
     }
+    pthread_mutex_unlock(&matriz_mutex);
+
+    for(int i=0;i<23;i++){
+      struct timespec delay = { 0, 2525250L };
+      pinta_columna(i);
+      nanosleep (&delay, NULL);
+    }
   }
-  return NULL;
+  return 0;
 }
 
 static void codificarEnMatriz(){
@@ -157,8 +99,8 @@ static void codificarEnMatriz(){
   limpiaMatrizLEDS();
 
   pthread_mutex_lock (&matriz_mutex);
-	matrizDeLeds[2][11]=1;
-	matrizDeLeds[5][11]=1;
+  matrizDeLeds[2][11]=1;
+  matrizDeLeds[5][11]=1;
   pthread_mutex_unlock (&matriz_mutex);
 
   getDigitosHoraMinuto();
@@ -433,10 +375,57 @@ static void* simulaSensor(void* arg){
   return NULL;
 }
 
+// Descripción fsm reloj
+static fsm_trans_t reloj[] = {
+  { RELOJ_PINTA, pintarHora, RELOJ_PINTA, },
+  { -1, NULL, -1, NULL },
+};
+
+// Explicit FSM description
+static fsm_trans_t modificador[] = {
+  { MODIFICADOR_HORA, modificarHora, MODIFICADOR_HORA, },
+  {-1, NULL, -1, NULL },
+};
+
+fsm_t* reloj_fsm;
+fsm_t* modificador_fsm;
+
+static void* reloj_fire (void* arg){
+
+  struct timeval next_activation;
+  struct timeval period = { 0, 2000 };
+
+  gettimeofday (&next_activation, NULL);
+  while (1) {
+    delay_until (&next_activation);
+    timeval_add (&next_activation, &next_activation, &period);
+    fsm_fire(reloj_fsm);
+  }
+  return 0;
+}
+
+static void* modificador_fire (void* arg){
+
+  struct timeval next_activation;
+  struct timeval period = { 0, 1000000 };
+
+  gettimeofday (&next_activation, NULL);
+  while (1) {
+    delay_until (&next_activation);
+    timeval_add (&next_activation, &next_activation, &period);
+    fsm_fire(modificador_fsm);
+  }
+  return 0;
+}
+
+
 int main (void){
 
   limpiaMatrizNumero();
   limpiaMatrizLEDS();
+
+  reloj_fsm = fsm_new (reloj);
+  modificador_fsm = fsm_new (modificador);
 
   minutosAux = 00;
   horaAux = 00;
@@ -447,21 +436,21 @@ int main (void){
 
   screen_init(2);
 
-  pthread_t threadAjustes, threadTimer, threadPintar, threadSensor;
+  pthread_t threadModificador, threadTimer, threadReloj, threadSensor;
   void* ret;
 
   init_mutex (&horario_mutex, 0);  
   init_mutex (&matriz_mutex, 0);
 
-  create_task (&threadAjustes, modificarHora , NULL, 1000 , 2, 1024);
-  create_task (&threadTimer, contadorTiempo , NULL, 60000, 3, 1024);
-  create_task (&threadPintar, pintarHora , NULL, 2 , 5, 1024);
-  create_task (&threadSensor, simulaSensor , NULL, 111, 4, 1024);
+  create_task (&threadModificador, modificador_fire , NULL, 1000 , 1, 1024);
+  create_task (&threadTimer, contadorTiempo , NULL, 60000, 2, 1024);
+  create_task (&threadReloj, reloj_fire , NULL, 2 , 4, 1024);
+  create_task (&threadSensor, simulaSensor , NULL, 111, 3, 1024);
 
 
-  pthread_join(threadAjustes, &ret);
+  pthread_join(threadModificador, &ret);
   pthread_join(threadTimer, &ret);
-  pthread_join(threadPintar, &ret);
+  pthread_join(threadReloj, &ret);
   pthread_join(threadSensor, &ret);
   return 0;
 }
